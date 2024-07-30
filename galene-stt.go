@@ -512,7 +512,7 @@ func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
 const overlapSamples = 200 * 16
 const silenceSamples = 300 * 16
-const minSamples = 16000
+const minSamples = 17600
 const maxSamples = 3 * 16000
 
 func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
