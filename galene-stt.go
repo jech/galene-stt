@@ -17,7 +17,6 @@ import (
 	"os/signal"
 	"path"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -528,46 +527,54 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
 	var packet rtp.Packet
 
-	var busy sync.Mutex
+	worker := make(chan []float32, 1)
+	defer close(worker)
+	workerDone := make(chan struct{})
 
-	wContext := whisperInit(modelFilename)
-	if wContext == nil {
-		log.Printf("whisper failure")
-		return
-	}
-	defer func() {
-		// wait for the workder to be done before freeing
-		busy.Lock()
-		busy.Unlock()
-		whisperClose(wContext)
-	}()
+	go func(worker <-chan []float32, workerDone chan<- struct{}) {
+		defer close(workerDone)
 
-	flush := func(all bool) {
+		wContext := whisperInit(modelFilename)
+		if wContext == nil {
+			return
+		}
+		defer whisperClose(wContext)
+
+		for {
+			work, ok := <-worker
+			if !ok {
+				return
+			}
+			for len(work) < minSamples {
+				work = append(work, 0.0)
+			}
+			whisper(wContext, work)
+		}
+	}(worker, workerDone)
+
+	flush := func(all bool) error {
 		if len(out) <= overlapSamples {
 			if all {
 				out = out[:0]
 			}
-			return
+			return nil
 		}
-		ok := busy.TryLock()
-		if !ok {
+
+		select {
+		case worker <- out:
+			if all {
+				out = out[:0]
+			} else {
+				copy(out, out[len(out)-overlapSamples:])
+				out = out[:overlapSamples]
+			}
+		case <-workerDone:
+			return errors.New("whisper failure")
+		default:
 			log.Printf("Dropping %v samples", len(out))
 			out = out[:0]
-			return
 		}
-		go func(out []float32) {
-			for len(out) < minSamples {
-				out = append(out, 0.0)
-			}
-			whisper(wContext, out)
-			busy.Unlock()
-		}(append([]float32(nil), out...))
-		if all {
-			out = out[:0]
-		} else {
-			copy(out, out[len(out)-overlapSamples:])
-			out = out[:overlapSamples]
-		}
+		return nil
 	}
 
 	for {
@@ -607,7 +614,11 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 				}
 			}
 			if delta != 1 {
-				flush(true)
+				err := flush(true)
+				if err != nil {
+					log.Println(err)
+					return
+				}
 			}
 		}
 
@@ -616,7 +627,11 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		)
 		if err != nil {
 			log.Printf("Decode: %v", err)
-			flush(true)
+			err := flush(true)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 			continue
 		}
 
@@ -631,10 +646,18 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			}
 			s = s / float32(silenceSamples)
 			if s < 1e-4 {
-				flush(true)
+				err := flush(true)
+				if err != nil {
+					log.Println(err)
+					return
+				}
 			}
 		} else if len(out) > maxSamples {
-			flush(false)
+			err := flush(false)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 		}
 	}
 }
