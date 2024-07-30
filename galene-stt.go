@@ -639,7 +639,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		lastSeqno = packet.SequenceNumber
 		nextTS = packet.Timestamp + uint32(3*n)
 
-		if len(out) > minSamples {
+		if len(out) >= minSamples {
 			s := float32(0.0)
 			for _, v := range out[len(out)-silenceSamples:] {
 				s += v * v
@@ -652,7 +652,9 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 					return
 				}
 			}
-		} else if len(out) > maxSamples {
+		}
+
+		if len(out) >= maxSamples {
 			err := flush(false)
 			if err != nil {
 				log.Println(err)
