@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -500,6 +501,12 @@ func gotClose(id string) error {
 }
 
 func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+	codec := track.Codec()
+	if !strings.EqualFold(codec.MimeType, "audio/opus") {
+		log.Printf("Unexpected track type %v", codec.MimeType)
+		return
+	}
+
 	go rtpLoop(track, receiver)
 }
 
