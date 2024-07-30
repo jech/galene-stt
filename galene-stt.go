@@ -598,11 +598,12 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 				// late packet, drop it
 				continue
 			}
-			if delta == 2 && nextTS-packet.Timestamp <= 4800 {
+			if delta == 2 && packet.Timestamp-nextTS <= 4800 {
 				// packet loss concealement
-				samples := int(nextTS - packet.Timestamp/3)
-				err := decoder.DecodePLCFloat32(
-					out[len(out) : len(out)+samples],
+				samples := int(packet.Timestamp-nextTS) / 3
+				err := decoder.DecodeFECFloat32(
+					packet.Payload,
+					out[len(out):len(out)+samples],
 				)
 				if err == nil {
 					out = out[:len(out)+samples]
@@ -610,7 +611,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 					delta--
 					nextTS = packet.Timestamp
 				} else {
-					log.Printf("PLC: %v", err)
+					log.Printf("Decode FEC: %v", err)
 				}
 			}
 			if delta != 1 {
