@@ -5,9 +5,8 @@ Build and install whisper.cpp:
 ```
 git clone https://github.com/ggerganov/whisper.cpp
 cd whisper.cpp
-mkdir build
+cmake -Bbuild
 cd build
-cmake ..
 make -j
 sudo make install
 cd ..
