@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
 	"gopkg.in/hraban/opus.v2"
@@ -124,12 +125,29 @@ func main() {
 	silenceSamples = int(silenceTime * 16000)
 	silenceSquared = float32(silence * silence)
 
+	var ir interceptor.Registry
 	var me webrtc.MediaEngine
-	err := me.RegisterDefaultCodecs()
+	err := webrtc.RegisterDefaultInterceptors(&me, &ir)
 	if err != nil {
-		log.Fatalf("RegisterDefaultCodecs: %v", err)
+		log.Fatalf("RegisterDefaultInterceptors: %v", err)
 	}
-	api = webrtc.NewAPI(webrtc.WithMediaEngine(&me))
+	err = me.RegisterCodec(
+		webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{
+				webrtc.MimeTypeOpus, 48000, 2,
+				"minptime=10;useinbandfec=1", nil,
+			},
+			PayloadType: 111,
+		}, webrtc.RTPCodecTypeAudio,
+	)
+	if err != nil {
+		log.Fatalf("RegisterCodec: %v", err)
+	}
+
+	api = webrtc.NewAPI(
+		webrtc.WithMediaEngine(&me),
+		webrtc.WithInterceptorRegistry(&ir),
+	)
 
 	dialer := websocket.DefaultDialer
 	if insecure {
