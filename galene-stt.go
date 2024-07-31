@@ -84,6 +84,7 @@ var modelFilename string
 func main() {
 	var password string
 	var insecure bool
+	var silenceTime, silence float64
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
@@ -101,12 +102,19 @@ func main() {
 		"don't check server certificates")
 	flag.BoolVar(&debug, "debug", false,
 		"enable protocol logging")
+	flag.Float64Var(&silenceTime, "silence-time", 0.3,
+		"`seconds` of silence required to start a new phrase")
+	flag.Float64Var(&silence, "silence", 0.025,
+		"maximum `volume` required to start a new phrase")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	silenceSamples = int(silenceTime * 16000)
+	silenceSquared = float32(silence * silence)
 
 	var me webrtc.MediaEngine
 	err := me.RegisterDefaultCodecs()
@@ -510,9 +518,11 @@ func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 }
 
 const overlapSamples = 200 * 16
-const silenceSamples = 300 * 16
 const minSamples = 17600
 const maxSamples = 3 * 16000
+
+var silenceSamples int
+var silenceSquared float32
 
 func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	decoder, err := opus.NewDecoder(16000, 1)
@@ -646,7 +656,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 				s += v * v
 			}
 			s = s / float32(silenceSamples)
-			if s < 1e-4 {
+			if s <= silenceSquared {
 				err := flush(true)
 				if err != nil {
 					log.Println(err)
