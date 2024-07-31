@@ -28,7 +28,7 @@ cd ..
 
 Download your favourite model:
 ```
-./models/download-ggml-model.sh base.en
+./models/download-ggml-model.sh small
 cd ..
 ```
 
@@ -51,7 +51,9 @@ ln -s ../whisper.cpp/models .
 ./galene-stt https://galene.org:8443/group/public/stt
 ```
 
-You may specify a specific model using the `-model` command-line option:
+If galene-stt reports dropped samples, then your machine is not fast
+enough for the selected model.  Specify a faster model using the `-model`
+command-line option:
 
 ```
 ./galene-stt -model models/ggml-tiny.bin \
