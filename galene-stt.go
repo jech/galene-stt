@@ -91,7 +91,7 @@ func main() {
 		)
 		flag.PrintDefaults()
 	}
-	flag.StringVar(&modelFilename, "model", "models/ggml-base.en.bin",
+	flag.StringVar(&modelFilename, "model", "models/ggml-small.bin",
 		"whisper model `filename`")
 	flag.StringVar(&username, "username", "speech-to-text",
 		"`username` to use for login")
