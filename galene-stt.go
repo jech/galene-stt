@@ -112,6 +112,8 @@ func main() {
 		"`seconds` of silence required to start a new phrase")
 	flag.Float64Var(&silence, "silence", 0.025,
 		"maximum `volume` required to start a new phrase")
+	flag.BoolVar(&dropSilence, "drop-silence", false,
+		"drop segments of silence")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
@@ -552,6 +554,7 @@ const maxSamples = 3 * 16000
 
 var silenceSamples int
 var silenceSquared float32
+var dropSilence bool
 
 func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	decoder, err := opus.NewDecoder(16000, 1)
@@ -565,6 +568,20 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	var nextTS uint32
 
 	var packet rtp.Packet
+
+	silence := 0
+	checkSilence := func(data []float32) {
+		var s float32
+		for _, v := range data {
+			s += v * v
+		}
+		s = s / float32(len(data))
+		if s <= silenceSquared {
+			silence += len(data)
+		} else {
+			silence = 0
+		}
+	}
 
 	flush := func(all bool) error {
 		if len(out) <= overlapSamples {
@@ -625,11 +642,15 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 					out[len(out):len(out)+samples],
 				)
 				if err == nil {
+					checkSilence(
+						out[len(out) : len(out)+samples],
+					)
 					out = out[:len(out)+samples]
 					lastSeqno++
 					delta--
 					nextTS = packet.Timestamp
 				} else {
+					silence = 0
 					log.Printf("Decode FEC: %v", err)
 				}
 			}
@@ -646,6 +667,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			packet.Payload, out[len(out):cap(out)],
 		)
 		if err != nil {
+			silence = 0
 			log.Printf("Decode: %v", err)
 			err := flush(true)
 			if err != nil {
@@ -655,22 +677,22 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			continue
 		}
 
+		checkSilence(out[len(out) : len(out)+n])
 		out = out[:len(out)+n]
 		lastSeqno = packet.SequenceNumber
 		nextTS = packet.Timestamp + uint32(3*n)
 
-		if len(out) >= minSamples {
-			s := float32(0.0)
-			for _, v := range out[len(out)-silenceSamples:] {
-				s += v * v
-			}
-			s = s / float32(silenceSamples)
-			if s <= silenceSquared {
-				err := flush(true)
-				if err != nil {
-					log.Println(err)
-					return
-				}
+		if dropSilence &&
+			len(out) >= silenceSamples && silence >= len(out) {
+			out = out[:0]
+			continue
+		}
+
+		if len(out) >= minSamples && silence >= silenceSamples {
+			err := flush(true)
+			if err != nil {
+				log.Println(err)
+				return
 			}
 		}
 
