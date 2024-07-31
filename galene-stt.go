@@ -631,6 +631,21 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		return nil
 	}
 
+	go func(receiver *webrtc.RTPReceiver) {
+		buf := make([]byte, 2048)
+		for {
+			_, _, err := receiver.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					return
+				}
+				log.Printf("Read RTCP: %v", err)
+				time.Sleep(time.Second)
+				continue
+			}
+		}
+	}(receiver)
+
 	for {
 		bytes, _, err := track.Read(buf)
 		if err != nil {
