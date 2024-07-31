@@ -60,10 +60,9 @@ command-line option:
              https://galene.org:8443/group/public/stt
 ```
 
-You may also use the flag `-drop-silence`, which will detect segments of
-silence and discard them early.
-
-Type `./galene-stt -help` for more information.
+You may also use the flag `-discard-silence`, which will detect segments
+of silence and discard them early.  Type `./galene-stt -help` for more
+information.
 
 
 — Juliusz Chroboczek
