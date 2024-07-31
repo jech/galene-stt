@@ -51,8 +51,8 @@ ln -s ../whisper.cpp/models .
 ./galene-stt https://galene.org:8443/group/public/stt
 ```
 
-If galene-stt reports dropped samples, then your machine is not fast
-enough for the selected model.  Specify a faster model using the `-model`
+If galene-stt reports dropped audio, then your machine is not fast enough
+for the selected model.  Specify a faster model using the `-model`
 command-line option:
 
 ```

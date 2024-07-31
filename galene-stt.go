@@ -78,6 +78,12 @@ type connection struct {
 
 var connections = make(map[string]*connection)
 var writer *messageWriter[*clientMessage]
+
+type workMessage struct {
+	data []float32
+}
+
+var worker *messageWriter[workMessage]
 var api *webrtc.API
 var modelFilename string
 
@@ -165,11 +171,34 @@ func main() {
 		log.Fatalf("Connect to server: %v", err)
 	}
 	defer ws.Close()
-	writer = newWriter[*clientMessage]()
+	writer = newWriter[*clientMessage](8)
 	go writerLoop(ws, writer)
 
 	readerCh := make(chan *clientMessage, 1)
 	go readerLoop(ws, readerCh)
+
+	worker = newWriter[workMessage](2)
+	defer close(worker.ch)
+	go func(worker *messageWriter[workMessage]) {
+		defer close(worker.done)
+
+		wContext := whisperInit(modelFilename)
+		if wContext == nil {
+			return
+		}
+		defer whisperClose(wContext)
+
+		for {
+			work, ok := <-worker.ch
+			if !ok {
+				return
+			}
+			for len(work.data) < minSamples {
+				work.data = append(work.data, 0.0)
+			}
+			whisper(wContext, work.data)
+		}
+	}(worker)
 
 	myId = makeId()
 
@@ -306,9 +335,9 @@ type messageWriter[T any] struct {
 	done chan struct{}
 }
 
-func newWriter[T any]() *messageWriter[T] {
+func newWriter[T any](capacity int) *messageWriter[T] {
 	return &messageWriter[T]{
-		ch:   make(chan T, 8),
+		ch:   make(chan T, capacity),
 		done: make(chan struct{}),
 	}
 }
@@ -537,31 +566,6 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
 	var packet rtp.Packet
 
-	worker := make(chan []float32, 1)
-	defer close(worker)
-	workerDone := make(chan struct{})
-
-	go func(worker <-chan []float32, workerDone chan<- struct{}) {
-		defer close(workerDone)
-
-		wContext := whisperInit(modelFilename)
-		if wContext == nil {
-			return
-		}
-		defer whisperClose(wContext)
-
-		for {
-			work, ok := <-worker
-			if !ok {
-				return
-			}
-			for len(work) < minSamples {
-				work = append(work, 0.0)
-			}
-			whisper(wContext, work)
-		}
-	}(worker, workerDone)
-
 	flush := func(all bool) error {
 		if len(out) <= overlapSamples {
 			if all {
@@ -570,18 +574,23 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			return nil
 		}
 
+		m := workMessage{
+			data: out,
+		}
 		select {
-		case worker <- out:
+		case worker.ch <- m:
 			if all {
 				out = out[:0]
 			} else {
 				copy(out, out[len(out)-overlapSamples:])
 				out = out[:overlapSamples]
 			}
-		case <-workerDone:
+		case <-worker.done:
 			return errors.New("whisper failure")
 		default:
-			log.Printf("Dropping %v samples", len(out))
+			log.Printf("Backlogged, dropping %vs of audio",
+				float32(len(out))/16000,
+			)
 			out = out[:0]
 		}
 		return nil
