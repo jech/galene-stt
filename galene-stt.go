@@ -115,8 +115,8 @@ func main() {
 		"`seconds` of silence required to start a new phrase")
 	flag.Float64Var(&silence, "silence", 0.025,
 		"maximum `volume` required to start a new phrase")
-	flag.BoolVar(&discardSilence, "discard-silence", false,
-		"discard segments of silence early")
+	flag.BoolVar(&keepSilence, "keep-silence", false,
+		"don't discard segments of silence, pass them to the engine")
 	flag.StringVar(&language, "lang", "en",
 		"`language` of input, or \"auto\" for autodetection")
 	flag.BoolVar(&translate, "translate", false,
@@ -578,7 +578,7 @@ const maxSamples = 3 * 16000
 
 var silenceSamples int
 var silenceSquared float32
-var discardSilence bool
+var keepSilence bool
 
 func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	decoder, err := opus.NewDecoder(16000, 1)
@@ -721,7 +721,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		lastSeqno = packet.SequenceNumber
 		nextTS = packet.Timestamp + uint32(3*n)
 
-		if discardSilence &&
+		if !keepSilence &&
 			len(out) >= silenceSamples && silence >= len(out) {
 			out = out[:0]
 			continue

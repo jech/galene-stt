@@ -51,6 +51,11 @@ ln -s ../whisper.cpp/models .
 ./galene-stt https://galene.org:8443/group/public/stt
 ```
 
+Galene-stt defaults to english; for other languages, use the `-lang` flag:
+```
+./galene-stt -lang fr https://galene.org:8443/group/public/stt
+```
+
 If galene-stt reports dropped audio, then your machine is not fast enough
 for the selected model.  Specify a faster model using the `-model`
 command-line option:
@@ -59,11 +64,6 @@ command-line option:
 ./galene-stt -model models/ggml-tiny.bin \
              https://galene.org:8443/group/public/stt
 ```
-
-You may also use the flag `-discard-silence`, which will detect segments
-of silence and discard them early.  Type `./galene-stt -help` for more
-information.
-
 
 — Juliusz Chroboczek
 
