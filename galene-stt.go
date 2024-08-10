@@ -92,6 +92,8 @@ func main() {
 	var password string
 	var insecure bool
 	var silenceTime, silence float64
+	var language string
+	var translate bool
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
@@ -115,6 +117,10 @@ func main() {
 		"maximum `volume` required to start a new phrase")
 	flag.BoolVar(&discardSilence, "discard-silence", false,
 		"discard segments of silence early")
+	flag.StringVar(&language, "lang", "en",
+		"`language` of input, or \"auto\" for autodetection")
+	flag.BoolVar(&translate, "translate", false,
+		"translate foreign languages")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
@@ -216,7 +222,7 @@ func main() {
 			for len(work.data) < minSamples {
 				work.data = append(work.data, 0.0)
 			}
-			whisper(wContext, work.data)
+			whisper(wContext, work.data, language, translate)
 		}
 	}(worker)
 

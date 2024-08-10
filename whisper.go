@@ -32,11 +32,17 @@ static void new_segment_callback(struct whisper_context *ctx, struct whisper_sta
     }
 }
 
-int whisper(struct whisper_context *ctx, void *data, int size) {
-     struct whisper_full_params parms =
+int whisper(struct whisper_context *ctx, void *data, int size,
+            char *language, int translate) {
+     struct whisper_full_params params =
          whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-     parms.new_segment_callback = new_segment_callback;
-     return whisper_full(ctx, parms, data, size);
+     params.language = language;
+     if(strcmp(language, "auto") == 0) {
+         params.detect_language = 1;
+     }
+     params.translate = translate;
+     params.new_segment_callback = new_segment_callback;
+     return whisper_full(ctx, params, data, size);
 }
 */
 import "C"
@@ -49,8 +55,14 @@ func whisperInit(modelFilename string) whisperContext {
 	return whisperContext(C.w_init(f))
 }
 
-func whisper(ctx whisperContext, buf []float32) {
-	C.whisper(ctx, unsafe.Pointer(&buf[0]), C.int(len(buf)))
+func whisper(ctx whisperContext, buf []float32, language string, translate bool) {
+	l := C.CString(language)
+	defer C.free(unsafe.Pointer(l))
+	t := C.int(0)
+	if translate {
+		t = 1
+	}
+	C.whisper(ctx, unsafe.Pointer(&buf[0]), C.int(len(buf)), l, t)
 }
 
 func whisperClose(ctx whisperContext) {
