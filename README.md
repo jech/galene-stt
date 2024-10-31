@@ -32,6 +32,12 @@ Download your favourite model:
 cd ..
 ```
 
+Install the `libopus` and `libopusfile` libraries.  For example,
+under Debian, do
+```
+apt install libopus-dev libopusfile-dev
+```
+
 Build galene-stt:
 ```
 git clone https://github.com/jech/galene-stt
