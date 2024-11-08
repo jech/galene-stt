@@ -318,6 +318,15 @@ outer:
 			if err != nil {
 				log.Printf("Remote ICE: %v", err)
 			}
+		case "usermessage":
+			if m.Kind == "error" || m.Kind == "warning" {
+				log.Printf(
+					"The server said: %v: %v",
+					m.Kind, m.Value,
+				)
+				break
+			}
+			log.Printf("Unexpected usermessage of kind %v", m.Kind)
 		case "close":
 			gotClose(m.Id)
 		}
