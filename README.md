@@ -54,12 +54,23 @@ ln -s ../whisper.cpp/models .
 ## Usage
 
 ```
-./galene-stt https://galene.org:8443/group/public/stt
+./galene-stt https://galene.org:8443/group/public/stt/
 ```
 
 Galene-stt defaults to english; for other languages, use the `-lang` flag:
+
 ```
-./galene-stt -lang fr https://galene.org:8443/group/public/stt
+./galene-stt -lang fr https://galene.org:8443/group/public/stt/
+```
+
+By default, `galene-stt` prints the transcript on standard output.  You
+may use the option `-chat` to send the transcript to the chat.  In order
+to display captions, set up a Galene user called "speech-to-text" (or
+whatever you specify in the `-username` option) with the "caption"
+permission, and use the option `-caption`:
+
+```
+./galene-stt -caption https://galene.org:8443/group/public/stt/
 ```
 
 If galene-stt reports dropped audio, then your machine is not fast enough
@@ -67,8 +78,8 @@ for the selected model.  Specify a faster model using the `-model`
 command-line option:
 
 ```
-./galene-stt -model models/ggml-tiny.bin \
-             https://galene.org:8443/group/public/stt
+./galene-stt -caption -model models/ggml-tiny.bin \
+             https://galene.org:8443/group/public/stt/
 ```
 
 — Juliusz Chroboczek

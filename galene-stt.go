@@ -71,6 +71,7 @@ var myId, username string
 var client http.Client
 var rtcConfiguration *webrtc.Configuration
 var debug bool
+var displayAsCaption, displayAsChat bool
 
 type connection struct {
 	id string
@@ -101,6 +102,12 @@ func main() {
 		)
 		flag.PrintDefaults()
 	}
+	flag.BoolVar(&displayAsCaption, "caption", false,
+		"display inferred text as captions",
+	)
+	flag.BoolVar(&displayAsChat, "chat", false,
+		"display inferred text as chat messages",
+	)
 	flag.StringVar(&modelFilename, "model", "models/ggml-small.bin",
 		"whisper model `filename`")
 	flag.StringVar(&username, "username", "speech-to-text",
