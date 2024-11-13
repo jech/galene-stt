@@ -633,6 +633,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	defer decoder.Destroy()
 
 	buf := make([]byte, 2048)
+	var buffered *rtp.Packet
 	out := make([]float32, 0, 2*maxSamples)
 	var lastSeqno uint16
 	var nextTS uint32
@@ -698,6 +699,39 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		}
 	}(receiver)
 
+	decode := func(p *rtp.Packet) error {
+		n, err := decoder.DecodeFloat(
+			p.Payload, out[len(out):cap(out)], false,
+		)
+		if err != nil {
+			return err
+		}
+		dumpAudio(out[len(out) : len(out)+n])
+		checkSilence(out[len(out) : len(out)+n])
+		out = out[:len(out)+n]
+		lastSeqno = p.SequenceNumber
+		nextTS = p.Timestamp + uint32(3*n)
+		return nil
+	}
+
+	decodeFEC := func(p *rtp.Packet, samples int) error {
+		if cap(out)-len(out) < samples {
+			return errors.New("buffer overflow")
+		}
+		n, err := decoder.DecodeFloat(
+			p.Payload, out[len(out):len(out)+samples], true,
+		)
+		if err != nil {
+			return err
+		}
+		dumpAudio(out[len(out) : len(out)+n])
+		checkSilence(out[len(out) : len(out)+n])
+		out = out[:len(out)+n]
+		lastSeqno = p.SequenceNumber
+		nextTS = p.Timestamp + uint32(3*n)
+		return nil
+	}
+
 	for {
 		bytes, _, err := track.Read(buf)
 		if err != nil {
@@ -713,60 +747,75 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			continue
 		}
 
-		if len(out) > 0 {
+		var next *rtp.Packet
+		fec := false
+
+		if len(out) == 0 {
+			next = &packet
+		} else {
 			delta := packet.SequenceNumber - lastSeqno
 			if delta == 0 || delta >= 0xFF00 {
 				// late packet, drop it
 				continue
 			}
-			if delta == 2 && packet.Timestamp-nextTS <= 4800 {
-				// packet loss concealement
-				samples := int(packet.Timestamp-nextTS) / 3
-				n, err := decoder.DecodeFloat(
-					packet.Payload,
-					out[len(out):len(out)+samples],
-					true,
-				)
-				if err == nil {
-					dumpAudio(out[len(out) : len(out)+n])
-					checkSilence(out[len(out) : len(out)+n])
-					out = out[:len(out)+n]
-					lastSeqno++
-					delta--
-					nextTS = packet.Timestamp
+			if delta > 10 || packet.Timestamp-nextTS > 48000 {
+				// massive packet drop
+				buffered = nil
+				flush(true)
+				next = &packet
+			} else if delta == 1 {
+				// in-order packet
+				next = &packet
+			} else if buffered == nil {
+				// one out-of-order packet
+				buffered = packet.Clone()
+				continue
+			} else if delta == 2 {
+				// two out-of-order packets, apply FEC
+				fec = true
+				next = &packet
+			} else {
+				bdelta := buffered.SequenceNumber - lastSeqno
+				if bdelta == 2 {
+					// apply FEC to the buffered packet
+					fec = true
+					next = buffered
+					buffered = packet.Clone()
 				} else {
-					silence = 0
-					log.Printf("Decode FEC: %v", err)
-				}
-			}
-			if delta != 1 {
-				err := flush(true)
-				if err != nil {
-					log.Println(err)
-					return
+					// discard later packet
+					if delta <= bdelta {
+						buffered = packet.Clone()
+					}
+					continue
 				}
 			}
 		}
 
-		n, err := decoder.DecodeFloat(
-			packet.Payload, out[len(out):cap(out)], false,
-		)
-		if err != nil {
-			silence = 0
-			log.Printf("Decode: %v", err)
-			err := flush(true)
+		if fec {
+			err = decodeFEC(next, int(next.Timestamp-nextTS)/3)
 			if err != nil {
-				log.Println(err)
-				return
+				log.Printf("Decode FEC: %v", err)
+				flush(true)
 			}
+		}
+
+		err = decode(next)
+		if err != nil {
+			log.Printf("Decode: %v", err)
+			silence = 0
+			flush(true)
 			continue
 		}
 
-		dumpAudio(out[len(out) : len(out)+n])
-		checkSilence(out[len(out) : len(out)+n])
-		out = out[:len(out)+n]
-		lastSeqno = packet.SequenceNumber
-		nextTS = packet.Timestamp + uint32(3*n)
+		if buffered != nil &&
+			buffered.Timestamp == nextTS &&
+			buffered.SequenceNumber == lastSeqno+1 {
+			err := decode(buffered)
+			if err != nil {
+				log.Printf("Decode buffered: %v", err)
+			}
+			buffered = nil
+		}
 
 		if !keepSilence &&
 			len(out) >= silenceSamples && silence >= len(out) {
