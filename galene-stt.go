@@ -21,11 +21,12 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/jech/galene-stt/opus"
+
 	"github.com/gorilla/websocket"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v3"
-	"gopkg.in/hraban/opus.v2"
 )
 
 type groupStatus struct {
@@ -629,6 +630,8 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		log.Printf("%v", err)
 		return
 	}
+	defer decoder.Destroy()
+
 	buf := make([]byte, 2048)
 	out := make([]float32, 0, 2*maxSamples)
 	var lastSeqno uint16
@@ -719,18 +722,15 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			if delta == 2 && packet.Timestamp-nextTS <= 4800 {
 				// packet loss concealement
 				samples := int(packet.Timestamp-nextTS) / 3
-				err := decoder.DecodeFECFloat32(
+				n, err := decoder.DecodeFloat(
 					packet.Payload,
 					out[len(out):len(out)+samples],
+					true,
 				)
 				if err == nil {
-					dumpAudio(
-						out[len(out) : len(out)+samples],
-					)
-					checkSilence(
-						out[len(out) : len(out)+samples],
-					)
-					out = out[:len(out)+samples]
+					dumpAudio(out[len(out) : len(out)+n])
+					checkSilence(out[len(out) : len(out)+n])
+					out = out[:len(out)+n]
 					lastSeqno++
 					delta--
 					nextTS = packet.Timestamp
@@ -748,8 +748,8 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			}
 		}
 
-		n, err := decoder.DecodeFloat32(
-			packet.Payload, out[len(out):cap(out)],
+		n, err := decoder.DecodeFloat(
+			packet.Payload, out[len(out):cap(out)], false,
 		)
 		if err != nil {
 			silence = 0
