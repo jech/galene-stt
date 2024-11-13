@@ -19,6 +19,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/interceptor"
@@ -73,6 +74,8 @@ var rtcConfiguration *webrtc.Configuration
 var debug bool
 var displayAsCaption, displayAsChat bool
 
+var dumpAudioFile *os.File
+
 type connection struct {
 	id string
 	pc *webrtc.PeerConnection
@@ -95,6 +98,7 @@ func main() {
 	var silenceTime, silence float64
 	var language string
 	var translate bool
+	var dumpaudio string
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
@@ -128,11 +132,22 @@ func main() {
 		"`language` of input, or \"auto\" for autodetection")
 	flag.BoolVar(&translate, "translate", false,
 		"translate foreign languages")
+	flag.StringVar(&dumpaudio, "dumpaudio", "",
+		"dump decoded audio to `filename`")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	if dumpaudio != "" {
+		var err error
+		dumpAudioFile, err = os.Create(dumpaudio)
+		if err != nil {
+			log.Fatalf("Create %v: %v", dumpaudio, err)
+		}
+		defer dumpAudioFile.Close()
 	}
 
 	silenceSamples = int(silenceTime * 16000)
@@ -588,6 +603,18 @@ func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	go rtpLoop(track, receiver)
 }
 
+func dumpAudio(pcm []float32) error {
+	if dumpAudioFile != nil {
+		data := unsafe.Slice(
+			(*byte)(unsafe.Pointer(unsafe.SliceData(pcm))),
+			4*len(pcm),
+		)
+		_, err := dumpAudioFile.Write(data)
+		return err
+	}
+	return nil
+}
+
 const overlapSamples = 200 * 16
 const minSamples = 17600
 const maxSamples = 3 * 16000
@@ -697,6 +724,9 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 					out[len(out):len(out)+samples],
 				)
 				if err == nil {
+					dumpAudio(
+						out[len(out) : len(out)+samples],
+					)
 					checkSilence(
 						out[len(out) : len(out)+samples],
 					)
@@ -732,6 +762,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			continue
 		}
 
+		dumpAudio(out[len(out) : len(out)+n])
 		checkSilence(out[len(out) : len(out)+n])
 		out = out[:len(out)+n]
 		lastSeqno = packet.SequenceNumber
