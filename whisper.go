@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+	"time"
 	"unsafe"
 )
 
@@ -62,7 +64,16 @@ func whisper(ctx whisperContext, buf []float32, language string, translate bool)
 	if translate {
 		t = 1
 	}
+	begin := time.Now()
 	C.whisper(ctx, unsafe.Pointer(&buf[0]), C.int(len(buf)), l, t)
+	end := time.Now()
+
+	if debug {
+		log.Printf("Processed %v of audio in %v",
+			time.Duration(len(buf))*time.Second/16000,
+			end.Sub(begin),
+		)
+	}
 }
 
 func whisperClose(ctx whisperContext) {
