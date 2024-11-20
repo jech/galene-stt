@@ -113,7 +113,7 @@ func main() {
 	flag.BoolVar(&displayAsChat, "chat", false,
 		"display inferred text as chat messages",
 	)
-	flag.StringVar(&modelFilename, "model", "models/ggml-small.bin",
+	flag.StringVar(&modelFilename, "model", "models/ggml-medium.bin",
 		"whisper model `filename`")
 	flag.StringVar(&username, "username", "speech-to-text",
 		"`username` to use for login")

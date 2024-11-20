@@ -26,15 +26,16 @@ sudo make install
 cd ..
 ```
 
-If you have the CUDA compiler installed, you can build with GPU support by
-replacing the third line with:
+Whisper.cpp does not scale well on the CPU, for production usage is is
+necessary to run it on the GPU.  If you have the CUDA compiler installed,
+you can build with GPU support by replacing the third line with:
 ```
 cmake -Bbuild -DGGML_CUDA=1
 ```
 
 Now download your favourite model:
 ```
-./models/download-ggml-model.sh small
+./models/download-ggml-model.sh medium
 cd ..
 ```
 
@@ -80,7 +81,8 @@ permission, and use the option `-caption`:
 
 If galene-stt reports dropped audio, then your machine is not fast enough
 for the selected model.  Specify a faster model using the `-model`
-command-line option:
+command-line option.  In my testing, however, models below *medium* did
+not produce useful output.
 
 ```
 ./galene-stt -caption -model models/ggml-tiny.bin \
