@@ -98,7 +98,7 @@ func main() {
 	var insecure bool
 	var silenceTime, silence float64
 	var language string
-	var translate bool
+	var translate, useGPU bool
 	var dumpaudio string
 
 	flag.Usage = func() {
@@ -133,6 +133,7 @@ func main() {
 		"`language` of input, or \"auto\" for autodetection")
 	flag.BoolVar(&translate, "translate", false,
 		"translate foreign languages")
+	flag.BoolVar(&useGPU, "gpu", true, "run on GPU if possible")
 	flag.StringVar(&dumpaudio, "dumpaudio", "",
 		"dump decoded audio to `filename`")
 	flag.Parse()
@@ -231,7 +232,7 @@ func main() {
 	go func(worker *messageWriter[workMessage]) {
 		defer close(worker.done)
 
-		wContext := whisperInit(modelFilename)
+		wContext := whisperInit(modelFilename, useGPU)
 		if wContext == nil {
 			return
 		}

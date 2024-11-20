@@ -14,8 +14,9 @@ import (
 #include <string.h>
 #include "whisper.h"
 
-struct whisper_context *w_init(char *model_filename) {
+struct whisper_context *w_init(char *model_filename, int gpu) {
       struct whisper_context_params cparams = whisper_context_default_params();
+      cparams.use_gpu = gpu ? true : false;
       struct whisper_context *ctx = whisper_init_from_file_with_params(
           model_filename, cparams
       );
@@ -51,10 +52,14 @@ import "C"
 
 type whisperContext *C.struct_whisper_context
 
-func whisperInit(modelFilename string) whisperContext {
+func whisperInit(modelFilename string, gpu bool) whisperContext {
 	f := C.CString(modelFilename)
 	defer C.free(unsafe.Pointer(f))
-	return whisperContext(C.w_init(f))
+	g := C.int(0)
+	if gpu {
+		g = 1
+	}
+	return whisperContext(C.w_init(f, g))
 }
 
 func whisper(ctx whisperContext, buf []float32, language string, translate bool) {
