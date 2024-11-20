@@ -26,7 +26,13 @@ sudo make install
 cd ..
 ```
 
-Download your favourite model:
+If you have the CUDA compiler installed, you can build with GPU support by
+replacing the third line with:
+```
+cmake -Bbuild -DGGML_CUDA=1
+```
+
+Now download your favourite model:
 ```
 ./models/download-ggml-model.sh small
 cd ..
