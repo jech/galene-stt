@@ -125,7 +125,7 @@ func main() {
 		"enable protocol logging")
 	flag.Float64Var(&silenceTime, "silence-time", 0.3,
 		"`seconds` of silence required to start a new phrase")
-	flag.Float64Var(&silence, "silence", 0.025,
+	flag.Float64Var(&silence, "silence", 0.07,
 		"maximum `volume` required to start a new phrase")
 	flag.BoolVar(&keepSilence, "keep-silence", false,
 		"don't discard segments of silence, pass them to the engine")
@@ -624,6 +624,8 @@ var silenceSamples int
 var silenceSquared float32
 var keepSilence bool
 
+const silenceSamplingInterval = 16000 / 200
+
 func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	decoder, err := opus.NewDecoder(16000, 1)
 	if err != nil {
@@ -642,15 +644,27 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
 	silence := 0
 	checkSilence := func(data []float32) {
-		var s float32
-		for _, v := range data {
-			s += v * v
-		}
-		s = s / float32(len(data))
-		if s <= silenceSquared {
-			silence += len(data)
-		} else {
-			silence = 0
+		// chop the data into silenceSamplingInterval chunks
+		i := 0
+		for i < len(data) {
+			count := silenceSamplingInterval
+			if count < len(data)-i {
+				count = len(data) - i
+			}
+			var s float32
+			// compute the average volume of each chunk
+			for j := i; j < i+count; j++ {
+				v := data[j]
+				s += v * v
+			}
+			// if the chunk was below the threshold,
+			// accumulate silence
+			if s <= silenceSquared*float32(count) {
+				silence += count
+			} else {
+				silence = 0
+			}
+			i += count
 		}
 	}
 
@@ -784,7 +798,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 					buffered = packet.Clone()
 				} else {
 					// discard later packet
-					debugf("Out of order packets, " +
+					debugf("Out of order packets, "+
 						"delta=%v, bdelta=%v",
 						delta, bdelta)
 					if delta <= bdelta {
@@ -823,6 +837,9 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
 		if !keepSilence &&
 			len(out) >= silenceSamples && silence >= len(out) {
+			debugf("Discarding %v of silence",
+				time.Duration(len(out))*time.Second/16000,
+			)
 			out = out[:0]
 			continue
 		}
