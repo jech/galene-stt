@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"time"
 	"unsafe"
@@ -52,17 +54,21 @@ import "C"
 
 type whisperContext *C.struct_whisper_context
 
-func whisperInit(modelFilename string, gpu bool) whisperContext {
+func whisperInit(modelFilename string, gpu bool) (whisperContext, error) {
 	f := C.CString(modelFilename)
 	defer C.free(unsafe.Pointer(f))
 	g := C.int(0)
 	if gpu {
 		g = 1
 	}
-	return whisperContext(C.w_init(f, g))
+	c := C.w_init(f, g)
+	if c == nil {
+		return nil, errors.New("failed to initialise Whisper context")
+	}
+	return whisperContext(c), nil
 }
 
-func whisper(ctx whisperContext, buf []float32, language string, translate bool) {
+func whisper(ctx whisperContext, buf []float32, language string, translate bool) error {
 	l := C.CString(language)
 	defer C.free(unsafe.Pointer(l))
 	t := C.int(0)
@@ -70,8 +76,12 @@ func whisper(ctx whisperContext, buf []float32, language string, translate bool)
 		t = 1
 	}
 	begin := time.Now()
-	C.whisper(ctx, unsafe.Pointer(&buf[0]), C.int(len(buf)), l, t)
+	rc := C.whisper(ctx, unsafe.Pointer(&buf[0]), C.int(len(buf)), l, t)
 	end := time.Now()
+
+	if rc != 0 {
+		return fmt.Errorf("whisper returned %v", rc)
+	}
 
 	if debug {
 		log.Printf("Processed %v of audio in %v",
@@ -79,6 +89,7 @@ func whisper(ctx whisperContext, buf []float32, language string, translate bool)
 			end.Sub(begin),
 		)
 	}
+	return nil
 }
 
 func whisperClose(ctx whisperContext) {

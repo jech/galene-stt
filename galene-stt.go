@@ -232,8 +232,9 @@ func main() {
 	go func(worker *messageWriter[workMessage]) {
 		defer close(worker.done)
 
-		wContext := whisperInit(modelFilename, useGPU)
-		if wContext == nil {
+		wContext, err := whisperInit(modelFilename, useGPU)
+		if err != nil {
+			log.Printf("Whisper: %v", err)
 			return
 		}
 		defer whisperClose(wContext)
@@ -246,7 +247,11 @@ func main() {
 			for len(work.data) < minSamples {
 				work.data = append(work.data, 0.0)
 			}
-			whisper(wContext, work.data, language, translate)
+			err := whisper(wContext, work.data, language, translate)
+			if err != nil {
+				log.Printf("Whisper: %v", err)
+				return
+			}
 		}
 	}(worker)
 
@@ -292,6 +297,9 @@ outer:
 		case <-terminate:
 			break outer
 		case <-done:
+			break outer
+		case <-worker.done:
+			log.Println("Whisper failure")
 			break outer
 		case m = <-readerCh:
 			if m == nil {
@@ -602,7 +610,12 @@ func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		return
 	}
 
-	go rtpLoop(track, receiver)
+	go func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		err := rtpLoop(track, receiver)
+		if err != nil {
+			log.Printf("RTP loop: %v", err)
+		}
+	}(track, receiver)
 }
 
 func dumpAudio(pcm []float32) error {
@@ -627,11 +640,10 @@ var keepSilence bool
 
 const silenceSamplingInterval = 16000 / 200
 
-func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 	decoder, err := opus.NewDecoder(16000, 1)
 	if err != nil {
-		log.Printf("%v", err)
-		return
+		return err
 	}
 	defer decoder.Destroy()
 
@@ -750,11 +762,11 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 	for {
 		bytes, _, err := track.Read(buf)
 		if err != nil {
+			err2 := flush(true)
 			if err != io.EOF {
-				log.Printf("%v", err)
+				return err
 			}
-			flush(true)
-			return
+			return err2
 		}
 		err = packet.Unmarshal(buf[:bytes])
 		if err != nil {
@@ -777,7 +789,10 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 				// massive packet drop
 				debugf("Lost synchronisation, delta=%v", delta)
 				buffered = nil
-				flush(true)
+				err := flush(true)
+				if err != nil {
+					return err
+				}
 				next = &packet
 			} else if delta == 1 {
 				// in-order packet
@@ -814,7 +829,10 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			err = decodeFEC(next, int(next.Timestamp-nextTS)/3)
 			if err != nil {
 				log.Printf("Decode FEC: %v", err)
-				flush(true)
+				err := flush(true)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -822,7 +840,10 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		if err != nil {
 			log.Printf("Decode: %v", err)
 			silence = 0
-			flush(true)
+			err := flush(true)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -848,16 +869,14 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		if len(out) >= minSamples && silence >= silenceSamples {
 			err := flush(true)
 			if err != nil {
-				log.Println(err)
-				return
+				return err
 			}
 		}
 
 		if len(out) >= maxSamples {
 			err := flush(false)
 			if err != nil {
-				log.Println(err)
-				return
+				return err
 			}
 		}
 	}
