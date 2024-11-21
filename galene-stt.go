@@ -19,9 +19,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/jech/galene-stt/opus"
+	"github.com/jech/galene-stt/wav"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/interceptor"
@@ -75,7 +75,7 @@ var rtcConfiguration *webrtc.Configuration
 var debug bool
 var displayAsCaption, displayAsChat bool
 
-var dumpAudioFile *os.File
+var dumpAudioFile *wav.Writer
 
 type connection struct {
 	id string
@@ -145,7 +145,7 @@ func main() {
 
 	if dumpaudio != "" {
 		var err error
-		dumpAudioFile, err = os.Create(dumpaudio)
+		dumpAudioFile, err = wav.Create(dumpaudio)
 		if err != nil {
 			log.Fatalf("Create %v: %v", dumpaudio, err)
 		}
@@ -620,11 +620,7 @@ func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
 func dumpAudio(pcm []float32) error {
 	if dumpAudioFile != nil {
-		data := unsafe.Slice(
-			(*byte)(unsafe.Pointer(unsafe.SliceData(pcm))),
-			4*len(pcm),
-		)
-		_, err := dumpAudioFile.Write(data)
+		err := dumpAudioFile.Write(pcm)
 		return err
 	}
 	return nil
