@@ -785,16 +785,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 				// late packet, drop it
 				continue
 			}
-			if delta > 10 || packet.Timestamp-nextTS > 48000 {
-				// massive packet drop
-				debugf("Lost synchronisation, delta=%v", delta)
-				buffered = nil
-				err := flush(true)
-				if err != nil {
-					return err
-				}
-				next = &packet
-			} else if delta == 1 {
+			if delta == 1 {
 				// in-order packet
 				next = &packet
 			} else if buffered == nil {
@@ -813,14 +804,22 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 					next = buffered
 					buffered = packet.Clone()
 				} else {
-					// discard later packet
-					debugf("Out of order packets, "+
+					debugf("Packet drop, " +
 						"delta=%v, bdelta=%v",
 						delta, bdelta)
-					if delta <= bdelta {
+					err := flush(true)
+					if err != nil {
+						return err
+					}
+					if delta == bdelta {
+						buffered = nil
+						next = &packet
+					} else if delta < bdelta {
+						next = &packet
+					} else {
+						next = buffered
 						buffered = packet.Clone()
 					}
-					continue
 				}
 			}
 		}
