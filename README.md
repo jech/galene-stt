@@ -22,6 +22,7 @@ cmake -Bbuild
 cd build
 make -j
 sudo make install
+sudo ldconfig
 cd ..
 ```
 
