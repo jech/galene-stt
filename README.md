@@ -16,7 +16,7 @@ GPU without requiring a GPU to be available on the server.
 Build and install whisper.cpp:
 
 ```
-git clone https://github.com/ggerganov/whisper.cpp
+git clone https://github.com/ggml-org/whisper.cpp
 cd whisper.cpp
 cmake -Bbuild
 cd build
@@ -37,8 +37,9 @@ It is also possible to run whisper.cpp over *Vulkan* or (reportedly)
 
 Now download your favourite model:
 ```
-./models/download-ggml-model.sh medium
-cd ..
+cd models
+./download-ggml-model.sh medium
+cd ../..
 ```
 
 Install the `libopus` library.  For example, under Debian, do
