@@ -13,13 +13,7 @@ func whisper_segment_callback(s *C.char) {
 		if displayAsCaption {
 			kind = "caption"
 		}
-		writer.write(&clientMessage{
-			Type:     "chat",
-			Kind:     kind,
-			Source:   myId,
-			Username: &username,
-			Value:    ss,
-		})
+		galeneClient.Chat(kind, username, ss)
 	} else {
 		fmt.Println(ss)
 	}
