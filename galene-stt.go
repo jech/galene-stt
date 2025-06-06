@@ -401,8 +401,8 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 		dumpAudio(out[len(out) : len(out)+n])
 		checkSilence(out[len(out) : len(out)+n])
 		out = out[:len(out)+n]
-		lastSeqno = p.SequenceNumber
-		nextTS = p.Timestamp + uint32(3*n)
+		lastSeqno = p.SequenceNumber - 1
+		nextTS = p.Timestamp
 		return nil
 	}
 
