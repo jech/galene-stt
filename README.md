@@ -68,11 +68,11 @@ By default, galene-stt produces a transcript on standard output:
 ```
 
 In order to produce real-time captions, create a user called
-`speech-to-text` with the `chat` permission in your Galene group:
+`speech-to-text` with the `caption` permission in your Galene group:
 ```json
 {
     "users": {
-       "speech-to-text": {"permissions": "chat", "password": ...}
+       "speech-to-text": {"permissions": "caption", "password": ...}
     }
 }
 ```
