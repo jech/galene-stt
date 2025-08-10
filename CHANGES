@@ -1,3 +1,9 @@
+10 August 2025: galene-stt 0.2
+
+  * Fixed a bug that could cause incorrect decoding of audio FEC.
+  * We now use the gclient library instead of speaking Galene's protocol
+    directly.
+
 4 December 2024: galene-stt 0.1
 
   * Initial release.
