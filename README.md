@@ -51,7 +51,7 @@ Build galene-stt:
 ```
 git clone https://github.com/jech/galene-stt
 cd galene-stt
-go build
+CGO_ENABLED go build -ldflags='-s -w'
 ```
 
 Put the models where galene-stt will find them:
