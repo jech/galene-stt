@@ -155,6 +155,9 @@ func main() {
 	err = client.Join(
 		context.Background(), flag.Arg(0), username, password,
 	)
+	if err != nil {
+		log.Fatalf("Join: %v", err)
+	}
 
 	worker = newWriter[workMessage](2)
 	defer close(worker.ch)
@@ -196,7 +199,7 @@ outer:
 			switch e := e.(type) {
 			case gclient.JoinedEvent:
 				switch e.Kind {
-				case "failed":
+				case "fail":
 					log.Printf("Couldn't join: %v", e.Value)
 					break outer
 				case "join", "change":
