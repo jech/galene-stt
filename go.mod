@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/gorilla/websocket v1.5.0
-	github.com/jech/gclient v0.0.0-20250530115456-e8edc33fd3d8
+	github.com/jech/gclient v0.0.0-20250821122736-1f6dd499c0e4
 	github.com/pion/interceptor v0.1.38
 	github.com/pion/rtp v1.8.16
 	github.com/pion/webrtc/v4 v4.1.1
