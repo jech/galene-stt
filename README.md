@@ -13,12 +13,18 @@ GPU without requiring a GPU to be available on the server.
 
 ## Installation
 
+First, install the Vulkan client library.  For example, under
+Debian, do
+```
+sudo apt install libvulkan-dev
+```
+
 Build and install whisper.cpp:
 
 ```
 git clone https://github.com/ggml-org/whisper.cpp
 cd whisper.cpp
-cmake -Bbuild
+cmake -Bbuild -DGGML_VULKAN=1
 cd build
 make -j
 sudo make install
@@ -26,14 +32,8 @@ sudo ldconfig
 cd ..
 ```
 
-Whisper.cpp does not scale well on the CPU, for production usage is is
-necessary to run on a GPU.  If you have the CUDA compiler installed,
-you can build with GPU support by replacing the third line with:
-```
-cmake -Bbuild -DGGML_CUDA=1
-```
-It is also possible to run whisper.cpp over *Vulkan* or (reportedly)
-*Core ML*, please see the whisper.cpp documentation for details.
+Alternatively, you might want to build whisper.cpp against Cuda or CoreML;
+please see the whisper.cpp `README.md` file for more information.
 
 Now download your favourite model:
 ```
@@ -51,7 +51,7 @@ Build galene-stt:
 ```
 git clone https://github.com/jech/galene-stt
 cd galene-stt
-CGO_ENABLED go build -ldflags='-s -w'
+CGO_ENABLED=1 go build -ldflags='-s -w'
 ```
 
 Put the models where galene-stt will find them:
