@@ -13,8 +13,7 @@ GPU without requiring a GPU to be available on the server.
 
 ## Installation
 
-First, install the Vulkan client library.  For example, under
-Debian, do
+First, install the Vulkan client library.  For example, under Debian:
 ```
 sudo apt install libvulkan-dev
 ```
@@ -32,8 +31,9 @@ sudo ldconfig
 cd ..
 ```
 
-Alternatively, you might want to build whisper.cpp against Cuda or CoreML;
-please see the whisper.cpp `README.md` file for more information.
+The Vulkan backend is recommended, since it is portable and well
+maintained.  It is also possible to build whisper.cpp against CUDA, CoreML
+or OpenVino; please see the whisper.cpp `README.md` file.
 
 Now download your favourite model:
 ```
@@ -62,38 +62,38 @@ ln -s ../whisper.cpp/models .
 
 ## Usage
 
-By default, galene-stt produces a transcript on standard output:
+By default, galene-stt produces a transcript on standard output.  This
+requires no special permissions, and may therefore be tested on any public
+server:
 ```
 ./galene-stt https://galene.org:8443/group/public/stt/
 ```
 
 In order to produce real-time captions, create a user called
 `speech-to-text` with the `caption` permission in your Galene group:
-```json
-{
-    "users": {
-       "speech-to-text": {"permissions": "caption", "password": ...}
-    }
-}
 ```
+galenectl create-group -group stt
+galenectl create-user -group stt -user speech-to-text -permissions caption
+galenectl set-password -group stt -user speech-to-text
+```
+
 Then run galene-stt with the `-caption` flag:
 ```
-./galene-stt -caption https://galene.org:8443/group/public/stt/
+./galene-stt -caption https://galene.example.org:8443/group/stt/
 ```
 
 Galene-stt defaults to english; for other languages, use the `-lang` flag:
 ```
-./galene-stt -lang fr https://galene.org:8443/group/public/stt/
+./galene-stt -lang fr https://galene.example.org:8443/group/stt/
 ```
 
-If galene-stt reports dropped audio, then your machine is not fast enough
+If galene-stt reports dropped audio, then your system is not fast enough
 for the selected model.  Specify a faster model using the `-model`
 command-line option.  In my testing, however, models smaller than *medium*
 did not produce useful output.
 
 ```
-./galene-stt -caption -model models/ggml-tiny.bin \
-             https://galene.org:8443/group/public/stt/
+./galene-stt -caption -model models/ggml-tiny.bin https://galene.org:8443/group/public/stt/
 ```
 
 — Juliusz Chroboczek
