@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -31,22 +33,23 @@ var displayAsCaption, displayAsChat bool
 
 var dumpAudioFile *wav.Writer
 
-type workMessage struct {
-	data []float32
-}
-
-var worker *messageWriter[workMessage]
-var modelFilename string
+var modelDirectory string
+var modelArchitecture string
 var galeneClient *gclient.Client
 var username string
+
+// The model's native sample rate
+const sampleRate = 16000
 
 func main() {
 	var password string
 	var insecure bool
-	var silenceTime, silence float64
-	var language string
-	var translate, useGPU bool
 	var dumpaudio string
+
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		log.Fatalf("UserCacheDir: %v", err)
+	}
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
@@ -60,8 +63,13 @@ func main() {
 	flag.BoolVar(&displayAsChat, "chat", false,
 		"display inferred text as chat messages",
 	)
-	flag.StringVar(&modelFilename, "model", "models/ggml-medium.bin",
-		"whisper model `filename`")
+	flag.StringVar(&modelDirectory, "model",
+		filepath.Join(cacheDir,
+			"moonshine_voice/download.moonshine.ai/model/medium-streaming-en/quantized",
+		),
+		"model `directory`")
+	flag.StringVar(&modelArchitecture, "model-arch", "medium-streaming",
+		"model `architecture`")
 	flag.StringVar(&username, "username", "speech-to-text",
 		"`username` to use for login")
 	flag.StringVar(&password, "password", "",
@@ -70,17 +78,6 @@ func main() {
 		"don't check server certificates")
 	flag.BoolVar(&debug, "debug", false,
 		"enable protocol logging")
-	flag.Float64Var(&silenceTime, "silence-time", 0.3,
-		"`seconds` of silence required to start a new phrase")
-	flag.Float64Var(&silence, "silence", 0.07,
-		"maximum `volume` required to start a new phrase")
-	flag.BoolVar(&keepSilence, "keep-silence", false,
-		"don't discard segments of silence, pass them to the engine")
-	flag.StringVar(&language, "lang", "en",
-		"`language` of input, or \"auto\" for autodetection")
-	flag.BoolVar(&translate, "translate", false,
-		"translate foreign languages")
-	flag.BoolVar(&useGPU, "gpu", true, "run on GPU if possible")
 	flag.StringVar(&dumpaudio, "dumpaudio", "",
 		"dump decoded audio to `filename`")
 	flag.Parse()
@@ -103,14 +100,17 @@ func main() {
 		defer dumpAudioFile.Close()
 	}
 
-	silenceSamples = int(silenceTime * 16000)
-	silenceSquared = float32(silence * silence)
+	transcriber, err := CreateTranscriber(modelDirectory, modelArchitecture)
+	if err != nil {
+		log.Fatalf("CreateTranscriber: %v", err)
+	}
+	defer DestroyTranscriber(transcriber)
 
 	client := gclient.NewClient()
 
 	var ir interceptor.Registry
 	var me webrtc.MediaEngine
-	err := webrtc.RegisterDefaultInterceptors(&me, &ir)
+	err = webrtc.RegisterDefaultInterceptors(&me, &ir)
 	if err != nil {
 		log.Fatalf("RegisterDefaultInterceptors: %v", err)
 	}
@@ -159,34 +159,6 @@ func main() {
 		log.Fatalf("Join: %v", err)
 	}
 
-	worker = newWriter[workMessage](2)
-	defer close(worker.ch)
-	go func(worker *messageWriter[workMessage]) {
-		defer close(worker.done)
-
-		wContext, err := whisperInit(modelFilename, useGPU)
-		if err != nil {
-			log.Printf("Whisper: %v", err)
-			return
-		}
-		defer whisperClose(wContext)
-
-		for {
-			work, ok := <-worker.ch
-			if !ok {
-				return
-			}
-			for len(work.data) < minSamples {
-				work.data = append(work.data, 0.0)
-			}
-			err := whisper(wContext, work.data, language, translate)
-			if err != nil {
-				log.Printf("Whisper: %v", err)
-				return
-			}
-		}
-	}(worker)
-
 	terminate := make(chan os.Signal, 1)
 	signal.Notify(terminate, syscall.SIGINT, syscall.SIGTERM)
 
@@ -205,12 +177,12 @@ outer:
 				case "join", "change":
 					client.Request(
 						map[string][]string{
-							"": []string{"audio"},
+							"": {"audio"},
 						},
 					)
 				}
 			case gclient.DownTrackEvent:
-				gotTrack(e.Track, e.Receiver)
+				gotTrack(e.Track, e.Receiver, transcriber)
 			case gclient.UserMessageEvent:
 				if e.Kind == "error" || e.Kind == "warning" {
 					log.Printf(
@@ -257,19 +229,19 @@ func (writer *messageWriter[T]) write(m T) error {
 	}
 }
 
-func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+func gotTrack(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, transcriber Transcriber) {
 	codec := track.Codec()
 	if !strings.EqualFold(codec.MimeType, "audio/opus") {
 		log.Printf("Unexpected track type %v", codec.MimeType)
 		return
 	}
 
-	go func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		err := rtpLoop(track, receiver)
+	go func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, transcriber Transcriber) {
+		err := rtpLoop(track, receiver, transcriber)
 		if err != nil {
 			log.Printf("RTP loop: %v", err)
 		}
-	}(track, receiver)
+	}(track, receiver, transcriber)
 }
 
 func dumpAudio(pcm []float32) error {
@@ -280,86 +252,82 @@ func dumpAudio(pcm []float32) error {
 	return nil
 }
 
-const overlapSamples = 200 * 16
-const minSamples = 17600
-const maxSamples = 3 * 16000
+func display(s string) error {
+	if s == "" {
+		return nil
+	}
 
-var silenceSamples int
-var silenceSquared float32
-var keepSilence bool
+	if displayAsCaption {
+		return galeneClient.Chat("caption", "", s)
+	}
+	if displayAsChat {
+		return galeneClient.Chat("", "", s)
+	}
+	_, err := fmt.Println(s)
+	return err
+}
 
-const silenceSamplingInterval = 16000 / 200
 
-func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
-	decoder, err := opus.NewDecoder(16000, 1)
+var ErrBacklogged = errors.New("backlogged, dropping audio")
+
+func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver, transcriber Transcriber) error {
+	decoder, err := opus.NewDecoder(sampleRate, 1)
 	if err != nil {
 		return err
 	}
 	defer decoder.Destroy()
 
+	stream, err := CreateStream(transcriber)
+	if err != nil {
+		return err
+	}
+	err = StartStream(transcriber, stream)
+	if err != nil {
+		DestroyStream(transcriber, stream)
+		return err
+	}
+	// packets are usually 20ms, so this allows up to 2s latency
+	// when under load
+	workerCh := make(chan []float32, 100)
+	defer close(workerCh)
+
+	go func(workerCh <-chan []float32) {
+		lastTranscribe := time.Now()
+		for {
+			m, ok := <-workerCh
+			if !ok {
+				break
+			}
+			err = AddAudio(transcriber, stream, m, sampleRate)
+			if err != nil {
+				log.Printf("AddAudio: %v", err)
+			}
+			if time.Since(lastTranscribe) > 200*time.Millisecond {
+				lastTranscribe = time.Now()
+				s, err := Transcribe(transcriber, stream)
+				if err != nil {
+					log.Printf("Transcribe: %v", err)
+					continue
+				}
+				display(s)
+			}
+		}
+		s, err := StopStream(transcriber, stream)
+		if err != nil {
+			log.Printf("StopStream: %v", err)
+		} else {
+			display(s)
+		}
+		DestroyStream(transcriber, stream)
+	}(workerCh)
+
 	buf := make([]byte, 2048)
+	out := make([]float32, 8192)
 	var buffered *rtp.Packet
-	out := make([]float32, 0, 2*maxSamples)
 	var lastSeqno uint16
 	var nextTS uint32
 
 	var packet rtp.Packet
-
-	silence := 0
-	checkSilence := func(data []float32) {
-		// chop the data into silenceSamplingInterval chunks
-		i := 0
-		for i < len(data) {
-			count := silenceSamplingInterval
-			if count < len(data)-i {
-				count = len(data) - i
-			}
-			var s float32
-			// compute the average volume of each chunk
-			for j := i; j < i+count; j++ {
-				v := data[j]
-				s += v * v
-			}
-			// if the chunk was below the threshold,
-			// accumulate silence
-			if s <= silenceSquared*float32(count) {
-				silence += count
-			} else {
-				silence = 0
-			}
-			i += count
-		}
-	}
-
-	flush := func(all bool) error {
-		if len(out) <= overlapSamples {
-			if all {
-				out = out[:0]
-			}
-			return nil
-		}
-
-		m := workMessage{
-			data: out,
-		}
-		select {
-		case worker.ch <- m:
-			if all {
-				out = out[:0]
-			} else {
-				copy(out, out[len(out)-overlapSamples:])
-				out = out[:overlapSamples]
-			}
-		case <-worker.done:
-			return errors.New("whisper failure")
-		default:
-			log.Printf("Backlogged, dropping %vs of audio",
-				float32(len(out))/16000,
-			)
-			out = out[:0]
-		}
-		return nil
-	}
 
 	go func(receiver *webrtc.RTPReceiver) {
 		buf := make([]byte, 2048)
@@ -376,47 +344,43 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 		}
 	}(receiver)
 
-	decode := func(p *rtp.Packet) error {
-		n, err := decoder.DecodeFloat(
-			p.Payload, out[len(out):cap(out)], false,
-		)
-		if err != nil {
-			return err
+	transcribe := func(data []float32) error {
+		dumpAudio(data)
+		select {
+		case workerCh <- slices.Clone(data):
+			return nil
+		default:
+			return ErrBacklogged
 		}
-		dumpAudio(out[len(out) : len(out)+n])
-		checkSilence(out[len(out) : len(out)+n])
-		out = out[:len(out)+n]
+	}
+
+	decode := func(p *rtp.Packet) error {
+		n, err := decoder.DecodeFloat(p.Payload, out, false)
+		if err == nil {
+			err = transcribe(out[:n])
+		}
 		lastSeqno = p.SequenceNumber
 		nextTS = p.Timestamp + uint32(3*n)
-		return nil
+		return err
 	}
 
 	decodeFEC := func(p *rtp.Packet, samples int) error {
-		if cap(out)-len(out) < samples {
-			return errors.New("buffer overflow")
+		n, err := decoder.DecodeFloat(p.Payload, out[:samples], true)
+		if err == nil {
+			err = transcribe(out[:n])
 		}
-		n, err := decoder.DecodeFloat(
-			p.Payload, out[len(out):len(out)+samples], true,
-		)
-		if err != nil {
-			return err
-		}
-		dumpAudio(out[len(out) : len(out)+n])
-		checkSilence(out[len(out) : len(out)+n])
-		out = out[:len(out)+n]
 		lastSeqno = p.SequenceNumber - 1
 		nextTS = p.Timestamp
-		return nil
+		return err
 	}
 
 	for {
 		bytes, _, err := track.Read(buf)
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			err2 := flush(true)
-			if err != io.EOF {
-				return err
-			}
-			return err2
+			return err
 		}
 		err = packet.Unmarshal(buf[:bytes])
 		if err != nil {
@@ -457,10 +421,6 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 					debugf("Packet drop, "+
 						"delta=%v, bdelta=%v",
 						delta, bdelta)
-					err := flush(true)
-					if err != nil {
-						return err
-					}
 					if delta == bdelta {
 						buffered = nil
 						next = &packet
@@ -478,21 +438,12 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 			err = decodeFEC(next, int(next.Timestamp-nextTS)/3)
 			if err != nil {
 				log.Printf("Decode FEC: %v", err)
-				err := flush(true)
-				if err != nil {
-					return err
-				}
 			}
 		}
 
 		err = decode(next)
 		if err != nil {
 			log.Printf("Decode: %v", err)
-			silence = 0
-			err := flush(true)
-			if err != nil {
-				return err
-			}
 			continue
 		}
 
@@ -505,28 +456,7 @@ func rtpLoop(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) error {
 			}
 			buffered = nil
 		}
-
-		if !keepSilence &&
-			len(out) >= silenceSamples && silence >= len(out) {
-			debugf("Discarding %v of silence",
-				time.Duration(len(out))*time.Second/16000,
-			)
-			out = out[:0]
-			continue
-		}
-
-		if len(out) >= minSamples && silence >= silenceSamples {
-			err := flush(true)
-			if err != nil {
-				return err
-			}
-		}
-
-		if len(out) >= maxSamples {
-			err := flush(false)
-			if err != nil {
-				return err
-			}
-		}
 	}
+
+	return nil
 }

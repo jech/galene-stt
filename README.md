@@ -13,33 +13,22 @@ GPU without requiring a GPU to be available on the server.
 
 ## Installation
 
-First, install the Vulkan client library.  For example, under Debian:
-```
-sudo apt install libvulkan-dev
-```
-
-Build and install whisper.cpp:
+Build the Moonshine library:
 
 ```
-git clone https://github.com/ggml-org/whisper.cpp
-cd whisper.cpp
-cmake -Bbuild -DGGML_VULKAN=1
+git clone https://github.com/moonshine-ai/moonshine
+cd moonshine/core
+cmake -Bbuild
 cd build
 make -j
-sudo make install
+sudo mv libmoonshine.so /usr/local/lib
 sudo ldconfig
-cd ..
 ```
 
-The Vulkan backend is recommended, since it is portable and well
-maintained.  It is also possible to build whisper.cpp against CUDA, CoreML
-or OpenVino; please see the whisper.cpp `README.md` file.
-
-Now download your favourite model:
+Now download the Moonshine-mediuam streaming model:
 ```
-cd models
-./download-ggml-model.sh medium
-cd ../..
+pipx install moonshine-voice
+moonshine-voice download --stt
 ```
 
 Install the `libopus` library.  For example, under Debian, do
@@ -51,14 +40,9 @@ Build galene-stt:
 ```
 git clone https://github.com/jech/galene-stt
 cd galene-stt
+ln -s ~/src/moonshine/core/moonshine-c-api.h .
 CGO_ENABLED=1 go build -ldflags='-s -w'
 ```
-
-Put the models where galene-stt will find them:
-```
-ln -s ../whisper.cpp/models .
-```
-
 
 ## Usage
 
@@ -85,15 +69,6 @@ Then run galene-stt with the `-caption` flag:
 Galene-stt defaults to english; for other languages, use the `-lang` flag:
 ```
 ./galene-stt -lang fr https://galene.example.org:8443/group/stt/
-```
-
-If galene-stt reports dropped audio, then your system is not fast enough
-for the selected model.  Specify a faster model using the `-model`
-command-line option.  In my testing, however, models smaller than *medium*
-did not produce useful output.
-
-```
-./galene-stt -caption -model models/ggml-tiny.bin https://galene.org:8443/group/public/stt/
 ```
 
 — Juliusz Chroboczek
