@@ -9,7 +9,7 @@ import (
 )
 
 /*
-#cgo LDFLAGS: -lwhisper
+#cgo pkg-config: whisper
 
 #include <stdlib.h>
 #include <stdio.h>
