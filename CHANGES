@@ -1,3 +1,8 @@
+10 Movember 2026: galene-stt 0.4
+
+  * Register whisper backends on init.  Thanks to phanirithvij.
+  * Use pkg-config for libwhisper.  Thanks to phanirithvij.
+
 2 November 2025: galene-stt 0.3
 
   * Fixed sending of captions to server.
