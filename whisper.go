@@ -15,8 +15,10 @@ import (
 #include <stdio.h>
 #include <string.h>
 #include "whisper.h"
+#include "ggml-backend.h"
 
 struct whisper_context *w_init(char *model_filename, int gpu) {
+      ggml_backend_load_all();
       struct whisper_context_params cparams = whisper_context_default_params();
       cparams.use_gpu = gpu ? true : false;
       struct whisper_context *ctx = whisper_init_from_file_with_params(
